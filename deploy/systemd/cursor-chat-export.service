@@ -1,0 +1,9 @@
+[Unit]
+Description=Cursor transcript incremental export
+After=default.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/cursor-chat-exporter/.env
+WorkingDirectory=%h/cursor-chat-exporter
+ExecStart=%h/cursor-chat-exporter/scripts/run_cursor_export.sh --bootstrap-mode baseline

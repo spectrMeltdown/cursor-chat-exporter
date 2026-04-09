@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Cursor transcript export daily
+
+[Timer]
+OnCalendar=*-*-* 00:05:00
+Persistent=true
+Unit=cursor-chat-export.service
+
+[Install]
+WantedBy=timers.target
