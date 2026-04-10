@@ -13,7 +13,17 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 
 mkdir -p "$SYSTEMD_USER_DIR"
-cp "$SERVICE_SRC" "$SYSTEMD_USER_DIR/cursor-chat-export.service"
+PYTHON_BIN="${CURSOR_EXPORT_PYTHON_BIN:-python3}"
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  echo "Python binary not found: $PYTHON_BIN" >&2
+  exit 11
+fi
+"$PYTHON_BIN" -c '
+from pathlib import Path
+import sys
+base, dst, src = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+dst.write_text(src.read_text().replace("@@REPO_ROOT@@", str(base)))
+' "$BASE_DIR" "$SYSTEMD_USER_DIR/cursor-chat-export.service" "$SERVICE_SRC"
 cp "$TIMER_SRC" "$SYSTEMD_USER_DIR/cursor-chat-export.timer"
 
 systemctl --user daemon-reload

@@ -119,13 +119,13 @@ Install timer/service:
 
 Defaults:
 - Runs daily at `00:05`.
-- Uses `%h/cursor-chat-exporter/.env`.
+- The install script writes your real repository path into the user unit (see `EnvironmentFile` / `WorkingDirectory` / `ExecStart` in `~/.config/systemd/user/cursor-chat-export.service`).
 
 Useful commands:
 
 ```bash
 systemctl --user status cursor-chat-export.timer
-systemctl --user list-timers | rg cursor-chat-export
+systemctl --user list-timers | grep cursor-chat-export
 journalctl --user -u cursor-chat-export.service --no-pager
 ```
 
@@ -193,16 +193,32 @@ last_run.json
 
 ## Exit Codes
 
-- `0`: success
-- `10`: missing required env variable
-- `11`: invalid/missing path or configuration
-- `20`: runtime error (including invalid `--date` format)
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `10` | Missing required environment variable |
+| `11` | Invalid or missing path, lock busy, or wrapper configuration error |
+| `12` | Invalid `offsets.json` (not a JSON object, bad offset values, or negative offsets) |
+| `20` | Runtime error (including invalid `--date` format, I/O failures, uncaught exceptions) |
+
+The Python exporter uses `10`, `11`, `12`, and `20`. Shell and PowerShell wrappers also use `11` for several validation failures (paths, missing `.env`, missing Python, lock held).
+
+## Consistency and duplicates
+
+- **Crash mid-run:** Markdown may be appended before `offsets.json` is rewritten at the end of a successful run. If the process stops early, the next run may **export the same transcript lines again** (duplicate entries in `combined.md` / per-chat files). Delete or edit those files if needed, or restore `offsets.json` from backup.
+- **Truncated transcript files:** If a `.jsonl` shrinks below the stored byte offset, the exporter resets to offset `0` and may **re-export** older content.
+- **Large catch-up:** Very large new tails are read in one pass; unusually huge single-shot growth can use significant memory.
+
+## Linux wrapper logging
+
+`run_cursor_export.sh` appends **all** exporter stdout/stderr to `CURSOR_EXPORT_OUTPUT_ROOT/logs/export.log`. Interactive runs do not print errors to the terminal; use `tail -f` on that log to debug.
 
 ## Troubleshooting
 
 - `Environment file not found`: create `.env` or set `CURSOR_EXPORT_ENV_FILE`.
 - `Missing required environment variable`: ensure all required keys are present in `.env`.
 - `Configured path does not exist`: create directories and use absolute paths.
+- `Invalid offsets.json`: fix or remove `CURSOR_EXPORT_STATE_DIR/offsets.json` (removal triggers a new bootstrap on next run; use `--bootstrap-mode` as needed).
 - No output on first run: expected if using `--bootstrap-mode baseline`.
 - Repeated/overlapping runs: check lock file configuration and scheduler frequency.
 - On Linux/macOS the wrapper uses `flock`; on Windows the PowerShell runner uses an exclusive lock file handle. Both prevent overlapping runs.

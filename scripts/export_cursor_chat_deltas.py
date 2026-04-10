@@ -11,6 +11,7 @@ from typing import Dict, List, Tuple
 EXIT_OK = 0
 EXIT_MISSING_ENV = 10
 EXIT_INVALID_PATH = 11
+EXIT_INVALID_STATE = 12
 EXIT_RUNTIME = 20
 
 REQUIRED_ENV_VARS = (
@@ -111,6 +112,41 @@ def read_json_file(path: Path, default):
         return json.load(fh)
 
 
+def coerce_nonnegative_int(value) -> int:
+    if isinstance(value, bool):
+        raise ValueError
+    if isinstance(value, int):
+        n = value
+    elif isinstance(value, float):
+        if not value.is_integer():
+            raise ValueError
+        n = int(value)
+    elif isinstance(value, str):
+        n = int(value.strip(), 10)
+    else:
+        raise ValueError
+    if n < 0:
+        raise ValueError
+    return n
+
+
+def parse_offsets_payload(raw) -> Dict[str, int]:
+    if not isinstance(raw, dict):
+        eprint("Invalid offsets.json: root must be a JSON object.")
+        raise SystemExit(EXIT_INVALID_STATE)
+    result: Dict[str, int] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str):
+            eprint(f"Invalid offsets.json: non-string key {key!r}.")
+            raise SystemExit(EXIT_INVALID_STATE)
+        try:
+            result[key] = coerce_nonnegative_int(value)
+        except ValueError:
+            eprint(f"Invalid offsets.json: bad offset for {key!r}: {value!r}.")
+            raise SystemExit(EXIT_INVALID_STATE)
+    return result
+
+
 def atomic_write_json(path: Path, payload: dict) -> None:
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     with tmp_path.open("w", encoding="utf-8") as fh:
@@ -142,6 +178,8 @@ def extract_line_text(line: str) -> Tuple[str, List[str]]:
 
 
 def read_new_lines(path: Path, start_offset: int) -> Tuple[List[str], int]:
+    if start_offset < 0:
+        start_offset = 0
     file_size = path.stat().st_size
     if file_size < start_offset:
         start_offset = 0
@@ -229,14 +267,14 @@ def main() -> int:
             print("Initialized baseline offsets. No exports written on first run.")
             return EXIT_OK
     else:
-        offsets = read_json_file(offsets_path, {})
+        offsets = parse_offsets_payload(read_json_file(offsets_path, {}))
 
     exported_entries = 0
     parse_errors = 0
 
     for file_path in files:
         key = str(file_path)
-        start_offset = int(offsets.get(key, 0))
+        start_offset = offsets.get(key, 0)
         lines, next_offset = read_new_lines(file_path, start_offset)
         offsets[key] = next_offset
         if not lines:
