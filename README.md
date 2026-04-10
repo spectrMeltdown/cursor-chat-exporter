@@ -22,13 +22,14 @@ This project reads Cursor transcript files, tracks byte offsets per file, and wr
 
 ## Requirements
 
-- Linux or macOS shell environment
-- `bash`
-- Python 3 (`python3` by default)
-- `flock` available in your environment
+- Python 3 (`python3` on Linux/macOS, `python` on Windows by default)
+- One of:
+  - Linux or macOS shell environment with `bash` and `flock`
+  - Windows with Windows PowerShell 5.1+
 - Optional scheduling:
   - `systemd --user` (recommended on Linux), or
-  - `cron`
+  - `cron` (Linux/macOS), or
+  - Windows Task Scheduler
 
 ## Configuration
 
@@ -76,16 +77,34 @@ Run exporter directly through the wrapper:
 ./scripts/run_cursor_export.sh --bootstrap-mode baseline --verbose
 ```
 
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run_cursor_export.ps1 --bootstrap-mode baseline --verbose
+```
+
 Dry run (no writes to outputs/state):
 
 ```bash
 ./scripts/run_cursor_export.sh --dry-run --verbose
 ```
 
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run_cursor_export.ps1 --dry-run --verbose
+```
+
 Run with backfill:
 
 ```bash
 ./scripts/run_cursor_export.sh --bootstrap-mode backfill --verbose
+```
+
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run_cursor_export.ps1 --bootstrap-mode backfill --verbose
 ```
 
 ## Scheduling
@@ -126,6 +145,23 @@ Override schedule at install time:
 
 ```bash
 CURSOR_EXPORT_CRON_SCHEDULE="*/30 * * * *" ./scripts/install_cursor_export_cron.sh
+```
+
+### Option C: Windows Task Scheduler
+
+Install/update a daily scheduled task (default `00:05`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install_cursor_export_task.ps1
+```
+
+Optional environment overrides before install:
+
+```powershell
+$env:CURSOR_EXPORT_ENV_FILE = "C:\path\to\cursor-chat-exporter\.env"
+$env:CURSOR_EXPORT_TASK_NAME = "cursor-chat-export"
+$env:CURSOR_EXPORT_TASK_TIME = "00:05"
+powershell -ExecutionPolicy Bypass -File .\scripts\install_cursor_export_task.ps1
 ```
 
 ## Output Layout
@@ -169,4 +205,5 @@ last_run.json
 - `Configured path does not exist`: create directories and use absolute paths.
 - No output on first run: expected if using `--bootstrap-mode baseline`.
 - Repeated/overlapping runs: check lock file configuration and scheduler frequency.
+- On Linux/macOS the wrapper uses `flock`; on Windows the PowerShell runner uses an exclusive lock file handle. Both prevent overlapping runs.
 
