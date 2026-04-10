@@ -1,0 +1,25 @@
+# Local environment configuration
+.env
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# macOS / Windows filesystem artifacts
+.DS_Store
+Thumbs.db
+
+# Editor artifacts
+.idea/
+.vscode/
+
+# Local export output/state defaults
+cursor-chat-exports/
+.local/state/cursor-chat-export/
