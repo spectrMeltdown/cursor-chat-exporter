@@ -19,7 +19,7 @@ set -a
 source "$ENV_FILE"
 set +a
 
-for var_name in CURSOR_TRANSCRIPTS_ROOT CURSOR_EXPORT_OUTPUT_ROOT CURSOR_EXPORT_STATE_DIR; do
+for var_name in CURSOR_PROJECTS_ROOT CURSOR_EXPORT_OUTPUT_ROOT CURSOR_EXPORT_STATE_DIR; do
   if [[ -z "${!var_name:-}" ]]; then
     echo "Missing required environment variable: $var_name" >&2
     exit 10

@@ -15,7 +15,7 @@ EXIT_INVALID_STATE = 12
 EXIT_RUNTIME = 20
 
 REQUIRED_ENV_VARS = (
-    "CURSOR_TRANSCRIPTS_ROOT",
+    "CURSOR_PROJECTS_ROOT",
     "CURSOR_EXPORT_OUTPUT_ROOT",
     "CURSOR_EXPORT_STATE_DIR",
 )
@@ -23,7 +23,7 @@ REQUIRED_ENV_VARS = (
 
 @dataclass
 class Config:
-    transcripts_root: Path
+    projects_root: Path
     output_root: Path
     state_dir: Path
     date_str: str
@@ -76,7 +76,7 @@ def resolve_config(args: argparse.Namespace) -> Config:
             eprint(f"Missing required environment variable: {var_name}")
             raise SystemExit(EXIT_MISSING_ENV)
 
-    transcripts_root = require_env_path("CURSOR_TRANSCRIPTS_ROOT")
+    projects_root = require_env_path("CURSOR_PROJECTS_ROOT")
     output_root = require_env_path("CURSOR_EXPORT_OUTPUT_ROOT")
     state_dir = require_env_path("CURSOR_EXPORT_STATE_DIR")
 
@@ -91,7 +91,7 @@ def resolve_config(args: argparse.Namespace) -> Config:
         date_str = datetime.now().strftime("%Y-%m-%d")
 
     return Config(
-        transcripts_root=transcripts_root,
+        projects_root=projects_root,
         output_root=output_root,
         state_dir=state_dir,
         date_str=date_str,
@@ -101,8 +101,17 @@ def resolve_config(args: argparse.Namespace) -> Config:
     )
 
 
-def iter_transcript_files(transcripts_root: Path) -> List[Path]:
-    return sorted(transcripts_root.rglob("*.jsonl"))
+def iter_transcript_files(projects_root: Path) -> List[Tuple[str, Path]]:
+    files: List[Tuple[str, Path]] = []
+    for project_dir in sorted(projects_root.iterdir()):
+        if not project_dir.is_dir():
+            continue
+        transcript_dir = project_dir / "agent-transcripts"
+        if not transcript_dir.is_dir():
+            continue
+        for transcript_file in sorted(transcript_dir.rglob("*.jsonl")):
+            files.append((project_dir.name, transcript_file))
+    return files
 
 
 def read_json_file(path: Path, default):
@@ -213,10 +222,10 @@ def format_entry(role: str, text: str) -> str:
 
 def ensure_output_paths(cfg: Config) -> Tuple[Path, Path]:
     day_dir = cfg.output_root / "daily" / cfg.date_str
-    chats_dir = day_dir / "chats"
+    projects_dir = day_dir / "projects"
     if not cfg.dry_run:
-        chats_dir.mkdir(parents=True, exist_ok=True)
-    return day_dir, chats_dir
+        projects_dir.mkdir(parents=True, exist_ok=True)
+    return day_dir, projects_dir
 
 
 def append_text(path: Path, text: str, dry_run: bool) -> None:
@@ -246,8 +255,8 @@ def main() -> int:
     args = parse_args()
     cfg = resolve_config(args)
     offsets_path = cfg.state_dir / "offsets.json"
-    files = iter_transcript_files(cfg.transcripts_root)
-    day_dir, chats_dir = ensure_output_paths(cfg)
+    files = iter_transcript_files(cfg.projects_root)
+    day_dir, projects_dir = ensure_output_paths(cfg)
     combined_path = day_dir / "combined.md"
 
     if cfg.verbose:
@@ -272,7 +281,7 @@ def main() -> int:
     exported_entries = 0
     parse_errors = 0
 
-    for file_path in files:
+    for project_name, file_path in files:
         key = str(file_path)
         start_offset = offsets.get(key, 0)
         lines, next_offset = read_new_lines(file_path, start_offset)
@@ -281,8 +290,11 @@ def main() -> int:
             continue
 
         chat_id = file_path.stem
-        per_chat_path = chats_dir / f"{chat_id}.md"
-        combined_lines: List[str] = [f"\n## Chat {chat_id}\n"]
+        per_project_chats_dir = projects_dir / project_name / "chats"
+        if not cfg.dry_run:
+            per_project_chats_dir.mkdir(parents=True, exist_ok=True)
+        per_chat_path = per_project_chats_dir / f"{chat_id}.md"
+        combined_lines: List[str] = [f"\n## Project {project_name} / Chat {chat_id}\n"]
 
         for line in lines:
             try:
