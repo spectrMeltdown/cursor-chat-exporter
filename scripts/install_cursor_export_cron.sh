@@ -18,7 +18,7 @@ TMP_FILE="$(mktemp)"
 trap 'rm -f "$TMP_FILE"' EXIT
 
 if crontab -l >/dev/null 2>&1; then
-  crontab -l | rg -v "cursor-chat-exporter/scripts/run_cursor_export.sh" > "$TMP_FILE" || true
+  crontab -l | grep -Fv "$RUNNER" > "$TMP_FILE" || true
 fi
 
 echo "$NEW_LINE" >> "$TMP_FILE"
