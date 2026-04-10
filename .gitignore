@@ -19,6 +19,7 @@ Thumbs.db
 # Editor artifacts
 .idea/
 .vscode/
+.cursor/
 
 # Local export output/state defaults
 cursor-chat-exports/

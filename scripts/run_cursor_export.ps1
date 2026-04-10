@@ -53,7 +53,7 @@ if (-not (Test-Path -LiteralPath $EnvFile -PathType Leaf)) {
 Import-DotEnv -Path $EnvFile
 
 $requiredVars = @(
-    "CURSOR_TRANSCRIPTS_ROOT",
+    "CURSOR_PROJECTS_ROOT",
     "CURSOR_EXPORT_OUTPUT_ROOT",
     "CURSOR_EXPORT_STATE_DIR"
 )

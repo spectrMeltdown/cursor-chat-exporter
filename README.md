@@ -8,10 +8,10 @@ This project reads Cursor transcript files, tracks byte offsets per file, and wr
 
 ## What It Does
 
-- Scans `CURSOR_TRANSCRIPTS_ROOT` recursively for `*.jsonl` transcript files.
+- Scans `CURSOR_PROJECTS_ROOT/*/agent-transcripts` recursively for `*.jsonl` transcript files.
 - Reads only newly appended content using per-file byte offsets.
 - Extracts text messages and writes:
-  - Per-chat Markdown: `daily/YYYY-MM-DD/chats/<chat_id>.md`
+  - Per-chat Markdown: `daily/YYYY-MM-DD/projects/<project>/chats/<chat_id>.md`
   - Combined daily Markdown: `daily/YYYY-MM-DD/combined.md`
 - Writes run metadata and state:
   - `CURSOR_EXPORT_STATE_DIR/offsets.json`
@@ -44,7 +44,7 @@ cp .env.template .env
 2. Edit `.env` and set absolute paths:
 
 ```dotenv
-CURSOR_TRANSCRIPTS_ROOT=/absolute/path/to/.cursor/projects/<project>/agent-transcripts
+CURSOR_PROJECTS_ROOT=/absolute/path/to/.cursor/projects
 CURSOR_EXPORT_OUTPUT_ROOT=/absolute/path/to/cursor-chat-exports
 CURSOR_EXPORT_STATE_DIR=/absolute/path/to/.local/state/cursor-chat-export
 
@@ -180,8 +180,10 @@ You will see:
   daily/
     2026-04-09/
       combined.md
-      chats/
-        <chat_id>.md
+      projects/
+        <project>/
+          chats/
+            <chat_id>.md
 ```
 
 State files live in `CURSOR_EXPORT_STATE_DIR`:
