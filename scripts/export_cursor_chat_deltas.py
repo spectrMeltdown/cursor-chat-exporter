@@ -2,6 +2,8 @@
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -30,10 +32,17 @@ class Config:
     dry_run: bool
     verbose: bool
     bootstrap_mode: str
+    notify: bool
+    notify_when: str
 
 
 def eprint(message: str) -> None:
     print(message, file=sys.stderr)
+
+
+def env_truthy(var_name: str) -> bool:
+    value = os.environ.get(var_name, "").strip().lower()
+    return value in ("1", "true", "yes", "on")
 
 
 def require_env_path(env_name: str) -> Path:
@@ -67,6 +76,17 @@ def parse_args() -> argparse.Namespace:
         default="baseline",
         help="First run behavior when no offsets state exists.",
     )
+    parser.add_argument(
+        "--notify",
+        action="store_true",
+        help="Send a desktop notification after success (subject to --notify-when).",
+    )
+    parser.add_argument(
+        "--notify-when",
+        choices=("new_data", "always"),
+        default=None,
+        help="When to notify: new_data (default) if new exports or baseline init; always on every success.",
+    )
     return parser.parse_args()
 
 
@@ -90,6 +110,13 @@ def resolve_config(args: argparse.Namespace) -> Config:
     else:
         date_str = datetime.now().strftime("%Y-%m-%d")
 
+    notify = bool(args.notify) or env_truthy("CURSOR_EXPORT_NOTIFY")
+    if args.notify_when is not None:
+        notify_when = args.notify_when
+    else:
+        raw = os.environ.get("CURSOR_EXPORT_NOTIFY_WHEN", "").strip().lower()
+        notify_when = raw if raw in ("always", "new_data") else "new_data"
+
     return Config(
         projects_root=projects_root,
         output_root=output_root,
@@ -98,6 +125,8 @@ def resolve_config(args: argparse.Namespace) -> Config:
         dry_run=args.dry_run,
         verbose=args.verbose,
         bootstrap_mode=args.bootstrap_mode,
+        notify=notify,
+        notify_when=notify_when,
     )
 
 
@@ -242,9 +271,164 @@ def write_run_summary(cfg: Config, summary: dict) -> None:
     atomic_write_json(last_run_path, summary)
 
 
-def bootstrap_offsets(cfg: Config, files: List[Path], offsets_path: Path, mode: str) -> Dict[str, int]:
+def _sanitize_notification_text(text: str, max_len: int) -> str:
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= max_len:
+        return collapsed
+    return collapsed[: max_len - 1] + "…"
+
+
+def should_send_notification(cfg: Config, summary: dict) -> bool:
+    if not cfg.notify or cfg.dry_run:
+        return False
+    if cfg.notify_when == "always":
+        return True
+    if summary.get("exported_entries", 0) > 0:
+        return True
+    if summary.get("bootstrap_only"):
+        return True
+    return False
+
+
+def notification_payload(summary: dict) -> Tuple[str, str]:
+    title = "Cursor chat export"
+    if summary.get("bootstrap_only"):
+        body = "Initialized baseline offsets. No exports on first run."
+        return title, body
+    parts = [f"Date {summary.get('date', 'n/a')}"]
+    parts.append(f"exported {summary.get('exported_entries', 0)} entries")
+    parse_errors = summary.get("parse_errors", 0)
+    if parse_errors:
+        parts.append(f"{parse_errors} parse errors")
+    return title, ". ".join(parts)
+
+
+def _notify_freedesktop(title: str, body: str, verbose: bool) -> None:
+    app = "Cursor Chat Export"
+    notify_send = shutil.which("notify-send")
+    if notify_send:
+        completed = subprocess.run(
+            [notify_send, "-a", app, "-t", "10000", title, body],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if completed.returncode == 0:
+            return
+        if verbose:
+            err = (completed.stderr or completed.stdout or "").strip()
+            eprint(f"notify-send failed (rc={completed.returncode}): {err}")
+
+    gdbus = shutil.which("gdbus")
+    if not gdbus:
+        if verbose:
+            eprint("Desktop notification skipped: notify-send and gdbus not found.")
+        return
+
+    completed = subprocess.run(
+        [
+            gdbus,
+            "call",
+            "--session",
+            "--dest",
+            "org.freedesktop.Notifications",
+            "--object-path",
+            "/org/freedesktop/Notifications",
+            "--method",
+            "org.freedesktop.Notifications.Notify",
+            app,
+            "0",
+            "",
+            title,
+            body,
+            "[]",
+            "{}",
+            "10000",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if completed.returncode != 0 and verbose:
+        err = (completed.stderr or completed.stdout or "").strip()
+        eprint(f"gdbus notification failed (rc={completed.returncode}): {err}")
+
+
+def _notify_windows(title: str, body: str, verbose: bool) -> None:
+    system_root = os.environ.get("SystemRoot", r"C:\Windows")
+    ps_exe = os.path.join(system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+    if not os.path.isfile(ps_exe):
+        ps_exe = "powershell.exe"
+    env = os.environ.copy()
+    env["CURSOR_CHAT_EXPORT_NOTIF_TITLE"] = title
+    env["CURSOR_CHAT_EXPORT_NOTIF_BODY"] = body
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        "Add-Type -AssemblyName System.Drawing; "
+        "$n = New-Object System.Windows.Forms.NotifyIcon; "
+        "$n.Icon = [System.Drawing.SystemIcons]::Information; "
+        "$n.Visible = $true; "
+        "$n.ShowBalloonTip(8000, $env:CURSOR_CHAT_EXPORT_NOTIF_TITLE, "
+        "$env:CURSOR_CHAT_EXPORT_NOTIF_BODY, [System.Windows.Forms.ToolTipIcon]::Info); "
+        "Start-Sleep -Seconds 9; "
+        "$n.Dispose()"
+    )
+    run_kw: Dict[str, object] = dict(
+        args=[
+            ps_exe,
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=env,
+    )
+    if sys.platform == "win32":
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        if flags:
+            run_kw["creationflags"] = flags
+    completed = subprocess.run(**run_kw)
+    if completed.returncode != 0 and verbose:
+        err = (completed.stderr or completed.stdout or "").strip()
+        eprint(f"Windows notification failed (rc={completed.returncode}): {err}")
+
+
+def send_desktop_notification(title: str, body: str, *, verbose: bool) -> None:
+    title = _sanitize_notification_text(title, 120)
+    body = _sanitize_notification_text(body, 400)
+    try:
+        if sys.platform == "win32":
+            _notify_windows(title, body, verbose)
+        else:
+            _notify_freedesktop(title, body, verbose)
+    except OSError as exc:
+        if verbose:
+            eprint(f"Desktop notification failed: {exc}")
+    except subprocess.TimeoutExpired:
+        if verbose:
+            eprint("Desktop notification timed out.")
+
+
+def maybe_notify(cfg: Config, summary: dict) -> None:
+    if not should_send_notification(cfg, summary):
+        return
+    title, body = notification_payload(summary)
+    send_desktop_notification(title, body, verbose=cfg.verbose)
+
+
+def bootstrap_offsets(
+    cfg: Config, entries: List[Tuple[str, Path]], offsets_path: Path, mode: str
+) -> Dict[str, int]:
     offsets: Dict[str, int] = {}
-    for file_path in files:
+    for _project_name, file_path in entries:
         offsets[str(file_path)] = file_path.stat().st_size if mode == "baseline" else 0
     if not cfg.dry_run:
         atomic_write_json(offsets_path, offsets)
@@ -266,6 +450,7 @@ def main() -> int:
         offsets = bootstrap_offsets(cfg, files, offsets_path, cfg.bootstrap_mode)
         summary = {
             "time": datetime.now().isoformat(),
+            "date": cfg.date_str,
             "bootstrap_mode": cfg.bootstrap_mode,
             "file_count": len(files),
             "exported_entries": 0,
@@ -274,6 +459,7 @@ def main() -> int:
         write_run_summary(cfg, summary)
         if cfg.bootstrap_mode == "baseline":
             print("Initialized baseline offsets. No exports written on first run.")
+            maybe_notify(cfg, summary)
             return EXIT_OK
     else:
         offsets = parse_offsets_payload(read_json_file(offsets_path, {}))
@@ -327,6 +513,7 @@ def main() -> int:
     print(
         f"Run complete: files={len(files)} exported_entries={exported_entries} parse_errors={parse_errors}"
     )
+    maybe_notify(cfg, summary)
     return EXIT_OK
 
 
