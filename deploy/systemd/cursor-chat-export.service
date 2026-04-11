@@ -4,6 +4,6 @@ After=default.target
 
 [Service]
 Type=oneshot
-EnvironmentFile="@@REPO_ROOT@@/.env"
-WorkingDirectory="@@REPO_ROOT@@"
-ExecStart="@@REPO_ROOT@@/scripts/run_cursor_export.sh" --bootstrap-mode baseline
+EnvironmentFile=@@REPO_ROOT@@/.env
+WorkingDirectory=@@REPO_ROOT@@
+ExecStart=@@REPO_ROOT@@/scripts/run_cursor_export.sh --bootstrap-mode baseline
