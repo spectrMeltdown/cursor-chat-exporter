@@ -8,6 +8,17 @@ ENV_FILE="${CURSOR_EXPORT_ENV_FILE:-$BASE_DIR/.env}"
 LOCK_FILE="${CURSOR_EXPORT_LOCK_FILE:-/tmp/cursor-chat-export.lock}"
 PYTHON_BIN="${CURSOR_EXPORT_PYTHON_BIN:-python3}"
 
+is_absolute_path() {
+  local path_value="$1"
+  if [[ "$path_value" == /* ]]; then
+    return 0
+  fi
+  if [[ "$path_value" =~ ^[a-zA-Z]:[\\/].* ]]; then
+    return 0
+  fi
+  return 1
+}
+
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Environment file not found: $ENV_FILE" >&2
   exit 11
@@ -24,7 +35,7 @@ for var_name in CURSOR_PROJECTS_ROOT CURSOR_EXPORT_OUTPUT_ROOT CURSOR_EXPORT_STA
     echo "Missing required environment variable: $var_name" >&2
     exit 10
   fi
-  if [[ "${!var_name}" != /* ]]; then
+  if ! is_absolute_path "${!var_name}"; then
     echo "Environment variable must be an absolute path: $var_name=${!var_name}" >&2
     exit 11
   fi

@@ -41,6 +41,10 @@ The project uses a `.env` file at repository root by default.
 cp .env.template .env
 ```
 
+```powershell
+Copy-Item .env.template .env
+```
+
 2. Edit `.env` and set absolute paths:
 
 ```dotenv
@@ -53,6 +57,18 @@ CURSOR_EXPORT_PYTHON_BIN=python3
 CURSOR_EXPORT_LOCK_FILE=/tmp/cursor-chat-export.lock
 ```
 
+Windows example (`.env` values should be literal absolute paths):
+
+```dotenv
+CURSOR_PROJECTS_ROOT=C:/Users/YourName/.cursor/projects
+CURSOR_EXPORT_OUTPUT_ROOT=C:/Users/YourName/cursor-chat-exports
+CURSOR_EXPORT_STATE_DIR=C:/Users/YourName/AppData/Local/cursor-chat-export
+
+# Optional
+CURSOR_EXPORT_PYTHON_BIN=python
+CURSOR_EXPORT_LOCK_FILE=C:/Users/YourName/AppData/Local/Temp/cursor-chat-export.lock
+```
+
 3. Ensure required directories already exist:
 
 ```bash
@@ -60,7 +76,16 @@ mkdir -p "$CURSOR_EXPORT_OUTPUT_ROOT"
 mkdir -p "$CURSOR_EXPORT_STATE_DIR"
 ```
 
+```powershell
+New-Item -ItemType Directory -Force -Path $env:CURSOR_EXPORT_OUTPUT_ROOT | Out-Null
+New-Item -ItemType Directory -Force -Path $env:CURSOR_EXPORT_STATE_DIR | Out-Null
+```
+
 You can override env file location with `CURSOR_EXPORT_ENV_FILE`.
+
+Git Bash on Windows:
+- You can use either `C:/Users/...` or `/c/Users/...` absolute paths in `.env`.
+- On native Windows, `run_cursor_export.ps1` is the recommended entry point.
 
 ## Bootstrap Modes
 
